@@ -162,6 +162,7 @@ export function findWindscreen(template: THREE.Object3D, box: THREE.Box3) {
     }
     if (!Number.isFinite(low)) for (const t of tris) for (const p of [t.a, t.b, t.c]) if (p.y < low) { low = p.y; lowZ = p.z; }
     normal.normalize();
+    console.log('WSDBG', low, lowZ, normal.toArray(), tris.length);
     // tilt: rotation about X that lays the vertical blade plane onto the glass.
     const tilt = Math.atan2(Math.max(normal.y, 0), -normal.z);
     // Rest just above the lower glass edge, lifted off the surface by a few cm.
@@ -182,6 +183,7 @@ export function findWindscreen(template: THREE.Object3D, box: THREE.Box3) {
     const y0 = surf(z), y1 = surf(z + 0.12);
     if (y0 === null || y1 === null) continue;
     const slope = (y1 - y0) / 0.12;
+    console.log('WSP', z.toFixed(2), y0.toFixed(3), slope.toFixed(2));
     if (slope > 0.7 && y0 > size.y * 0.45) {
       const tilt = Math.atan2(1, slope);
       const normal = new THREE.Vector3(0, Math.sin(tilt), -Math.cos(tilt));
