@@ -285,6 +285,7 @@ export function createTrafficLightRig(
   const rearGlow = make(glowGeo(lampR, sig.rear, true), glowMat(0xff2010));
 
   const ws = findWindscreen(template, box);
+  console.log("WS", key, JSON.stringify(ws), JSON.stringify(box.min.toArray()), JSON.stringify(box.max.toArray()));
   const length = Math.min(0.62, ws.halfW * 0.6) * (tall ? 1.4 : 1);
   // Blade lies along +x from its pivot; thin and dark.
   const bladeGeo = new THREE.BoxGeometry(length, 0.018, 0.025).translate(length / 2, 0.012, 0);
