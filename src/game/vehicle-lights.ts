@@ -164,6 +164,7 @@ export function createTrafficLightRig(
   tall: boolean,
 ): TrafficLightRig {
   const box = new THREE.Box3().setFromObject(template);
+  { const out: string[] = []; template.traverse((o) => { const m = o as THREE.Mesh; if (!m.isMesh) return; const b = new THREE.Box3().setFromObject(m); const mats = Array.isArray(m.material) ? m.material : [m.material]; out.push(`${m.name}|${mats.map((x) => x.name).join(',')}|${b.min.toArray().map((v) => v.toFixed(2))}|${b.max.toArray().map((v) => v.toFixed(2))}`); }); console.log('DUMP', key, JSON.stringify(box.min.toArray()), JSON.stringify(box.max.toArray()), out.join(' ;; ')); }
   const halfW = (box.max.x - box.min.x) / 2;
   const height = tall ? Math.min(box.max.y, 1.35) : box.max.y;
   const sig = signatureFor(key);
