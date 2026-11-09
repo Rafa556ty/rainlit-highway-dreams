@@ -77,20 +77,6 @@ export function wiperAngle(time: number, rain: number, phase = 0) {
   return t * 1.75;
 }
 
-function buildGeo(shapes: Shape[], halfW: number, height: number, z: number, scale = 1) {
-  const geos = shapes.map((s) => {
-    const g = s.round
-      ? new THREE.CircleGeometry((s.w / 2) * scale, 20)
-      : new THREE.PlaneGeometry(s.w * scale, s.h * scale);
-    if (s.tilt) g.rotateZ(s.tilt * Math.sign(s.x || 1));
-    g.translate(s.x * halfW, s.y * height, 0);
-    return g;
-  });
-  const merged = mergeGeometries(geos) ?? geos[0]!;
-  merged.translate(0, 0, z);
-  return merged;
-}
-
 let glowTex: THREE.CanvasTexture | null = null;
 function glowTexture() {
   if (glowTex) return glowTex;
@@ -118,43 +104,120 @@ export type TrafficLightRig = {
   all: THREE.InstancedMesh[];
 };
 
-/** Find the windscreen: forward-most glass, falling back to body proportions. */
-export function findWindscreen(template: THREE.Object3D, box: THREE.Box3) {
+type Tri = { a: THREE.Vector3; b: THREE.Vector3; c: THREE.Vector3; n: THREE.Vector3; area: number; center: THREE.Vector3 };
+
+/** All triangles (template space) of meshes whose mesh/material label matches. */
+function trianglesOf(template: THREE.Object3D, test: (label: string) => boolean): Tri[] {
   template.updateMatrixWorld(true);
-  const glass = new THREE.Box3();
-  const tmp = new THREE.Box3();
+  const out: Tri[] = [];
   template.traverse((o) => {
     const m = o as THREE.Mesh;
-    if (!m.isMesh) return;
+    if (!m.isMesh || o.parent?.name === "active-wing") return;
     const mats = Array.isArray(m.material) ? m.material : [m.material];
-    const label = `${m.name} ${mats.map((x) => x.name).join(" ")}`.toLowerCase();
-    if (!/window|windshield|windscreen|glass/.test(label) || /light|red|lamp|mirror/.test(label)) return;
-    tmp.setFromObject(m);
-    const c = tmp.getCenter(new THREE.Vector3());
-    if (c.z < 0.4 && tmp.max.y > box.max.y * 0.6) glass.union(tmp);
+    if (!test(`${m.name} ${mats.map((x) => x.name).join(" ")}`.toLowerCase())) return;
+    const pos = m.geometry.getAttribute("position");
+    const idx = m.geometry.getIndex();
+    const n = idx ? idx.count : pos.count;
+    const v = (i: number) =>
+      new THREE.Vector3().fromBufferAttribute(pos, idx ? idx.getX(i) : i).applyMatrix4(m.matrixWorld);
+    for (let i = 0; i + 2 < n; i += 3) {
+      const a = v(i), b = v(i + 1), c = v(i + 2);
+      const cr = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+      const area = cr.length() / 2;
+      if (area < 1e-7) continue;
+      out.push({ a, b, c, n: cr.normalize(), area, center: a.clone().add(b).add(c).divideScalar(3) });
+    }
   });
+  return out;
+}
+
+const isGlass = (l: string) =>
+  /window|windshield|windscreen|glass/.test(l) && !/light|red|lamp|mirror/.test(l);
+const isLamp = (l: string) =>
+  /light|lamp|red_glass|redglass/.test(l) && !/amber|beacon|window/.test(l);
+
+/**
+ * Find the bottom edge of the windscreen (where wipers rest) and its slope from the
+ * actual glass triangles; falls back to body proportions.
+ */
+export function findWindscreen(template: THREE.Object3D, box: THREE.Box3) {
   const size = box.getSize(new THREE.Vector3());
-  const valid = !glass.isEmpty() && glass.min.z > box.min.z && glass.min.z < 0.5;
-  const baseZ = valid ? glass.min.z + 0.12 : box.min.z + size.z * 0.3;
-  const baseY = valid ? Math.max(glass.min.y + 0.04, size.y * 0.55) : size.y * 0.66;
-  // Snap onto the actual glass/body surface so blades sit on top of the windscreen.
-  const ray = new THREE.Raycaster();
-  const down = new THREE.Vector3(0, -1, 0);
-  const surf = (x: number, z: number) => {
-    ray.set(new THREE.Vector3(x, box.max.y + 1, z), down);
-    const hit = ray.intersectObject(template, true)[0];
-    return hit ? hit.point.y : null;
-  };
-  const x = size.x * 0.12;
-  const y0 = surf(x, baseZ);
-  const y1 = surf(x, baseZ + 0.3);
-  let tilt = 1.05;
-  let y = baseY;
-  if (y0 !== null) {
-    y = y0 + 0.025;
-    if (y1 !== null && y1 > y0) tilt = Math.max(0.15, Math.min(1.35, Math.atan2(0.3, y1 - y0)));
+  const halfBody = size.x / 2;
+  const midZ = (box.min.z + box.max.z) / 2;
+  const tris = trianglesOf(template, isGlass).filter((t) => {
+    // Outward normals point forward (-z) and up; some exporters flip winding.
+    const n = t.n.z > 0 ? t.n.clone().negate() : t.n;
+    return t.center.z < midZ && n.z < -0.3 && Math.abs(t.center.x) < halfBody * 0.55 && t.center.y > size.y * 0.35;
+  });
+  if (tris.length) {
+    const normal = new THREE.Vector3();
+    let low = Infinity, lowZ = 0, halfW = 0;
+    for (const t of tris) {
+      const n = t.n.z > 0 ? t.n.clone().negate() : t.n;
+      normal.addScaledVector(n, t.area);
+      for (const p of [t.a, t.b, t.c]) {
+        halfW = Math.max(halfW, Math.abs(p.x));
+        if (Math.abs(p.x) < halfBody * 0.4 && p.y < low) { low = p.y; lowZ = p.z; }
+      }
+    }
+    normal.normalize();
+    // tilt: rotation about X that lays the vertical blade plane onto the glass.
+    const tilt = Math.atan2(Math.max(normal.y, 0), -normal.z);
+    // Rest just above the lower glass edge, lifted off the surface by a few cm.
+    const up = new THREE.Vector3(0, Math.cos(tilt), Math.sin(tilt));
+    const base = new THREE.Vector3(0, low, lowZ).addScaledVector(up, 0.035).addScaledVector(normal, 0.018);
+    return { baseZ: base.z, baseY: base.y, halfW: Math.min(halfW, halfBody), tilt, found: true };
   }
-  return { baseZ, baseY: y, halfW: size.x / 2, tilt };
+  return { baseZ: box.min.z + size.z * 0.3, baseY: size.y * 0.66, halfW: halfBody, tilt: 1.05, found: false };
+}
+
+/** Lamp lens geometry of the model itself, split into front and rear clusters. */
+function lampGeometry(template: THREE.Object3D, box: THREE.Box3, rear: boolean) {
+  const len = box.max.z - box.min.z;
+  const zone = Math.min(len * 0.25, 1.4);
+  const tris = trianglesOf(template, isLamp).filter((t) =>
+    rear ? t.center.z > box.max.z - zone : t.center.z < box.min.z + zone,
+  );
+  if (tris.length < 4) return null;
+  const arr = new Float32Array(tris.length * 9);
+  tris.forEach((t, i) => {
+    // Nudge outward so the lit lens sits on (not inside) the original lamp.
+    const push = t.n.clone().multiplyScalar(0.004);
+    [t.a, t.b, t.c].forEach((p, k) => p.clone().add(push).toArray(arr, i * 9 + k * 3));
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(arr, 3));
+  // Glow centres: one per side, at the area-weighted lamp centre.
+  const sides = [-1, 1].map((sx) => {
+    const c = new THREE.Vector3();
+    const b = new THREE.Box3();
+    let w = 0;
+    for (const t of tris) if (Math.sign(t.center.x || 1) === sx) {
+      c.addScaledVector(t.center, t.area); w += t.area;
+      b.expandByPoint(t.a).expandByPoint(t.b).expandByPoint(t.c);
+    }
+    return w ? { c: c.divideScalar(w), size: b.getSize(new THREE.Vector3()) } : null;
+  }).filter((x): x is { c: THREE.Vector3; size: THREE.Vector3 } => !!x);
+  return { geo, sides };
+}
+
+/** Signature overlay snapped onto the body surface (raycast back from the bumper). */
+function snappedSignature(shapes: Shape[], template: THREE.Object3D, box: THREE.Box3, halfW: number, height: number, rear: boolean, scale = 1) {
+  const ray = new THREE.Raycaster();
+  const dir = new THREE.Vector3(0, 0, rear ? -1 : 1);
+  const geos = shapes.map((s) => {
+    const g = s.round
+      ? new THREE.CircleGeometry((s.w / 2) * scale, 20)
+      : new THREE.PlaneGeometry(s.w * scale, s.h * scale);
+    if (s.tilt) g.rotateZ(s.tilt * Math.sign(s.x || 1));
+    const x = s.x * halfW, y = s.y * height;
+    ray.set(new THREE.Vector3(x, y, rear ? box.max.z + 1 : box.min.z - 1), dir);
+    const hit = ray.intersectObject(template, true)[0];
+    const z = hit ? hit.point.z + (rear ? 0.01 : -0.01) : rear ? box.max.z - 0.05 : box.min.z + 0.05;
+    g.translate(x, y, z);
+    return g;
+  });
+  return mergeGeometries(geos) ?? geos[0]!;
 }
 
 export function createTrafficLightRig(
@@ -164,7 +227,6 @@ export function createTrafficLightRig(
   tall: boolean,
 ): TrafficLightRig {
   const box = new THREE.Box3().setFromObject(template);
-  { const out: string[] = []; template.traverse((o) => { const m = o as THREE.Mesh; if (!m.isMesh) return; const b = new THREE.Box3().setFromObject(m); const mats = Array.isArray(m.material) ? m.material : [m.material]; out.push(`${m.name}|${mats.map((x) => x.name).join(',')}|${b.min.toArray().map((v) => v.toFixed(2))}|${b.max.toArray().map((v) => v.toFixed(2))}`); }); console.log('DUMP', key, JSON.stringify(box.min.toArray()), JSON.stringify(box.max.toArray()), out.join(' ;; ')); }
   const halfW = (box.max.x - box.min.x) / 2;
   const height = tall ? Math.min(box.max.y, 1.35) : box.max.y;
   const sig = signatureFor(key);
@@ -176,15 +238,27 @@ export function createTrafficLightRig(
     mesh.renderOrder = 2;
     return mesh;
   };
+  template.updateMatrixWorld(true);
+  const lampF = lampGeometry(template, box, false);
+  const lampR = lampGeometry(template, box, true);
+  const lensMat = (color: number) =>
+    new THREE.MeshBasicMaterial({
+      color,
+      toneMapped: false,
+      transparent: true,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
   const front = make(
-    buildGeo(sig.front, halfW, height, box.min.z - 0.02),
-    new THREE.MeshBasicMaterial({ color: 0xf2f6ff, toneMapped: false, transparent: true, side: THREE.DoubleSide }),
+    lampF?.geo ?? snappedSignature(sig.front, template, box, halfW, height, false),
+    lensMat(0xf2f6ff),
   );
   const rear = make(
-    buildGeo(sig.rear, halfW, height, box.max.z + 0.02),
-    new THREE.MeshBasicMaterial({ color: 0xff1206, toneMapped: false, transparent: true, side: THREE.DoubleSide }),
+    lampR?.geo ?? snappedSignature(sig.rear, template, box, halfW, height, true),
+    lensMat(0xff1206),
   );
-  const glowShapes = (s: Shape[]) => s.map((p) => ({ ...p, w: Math.max(p.w, 0.12) * 2.6 + 0.3, h: Math.max(p.h, 0.12) * 2.6 + 0.3, round: false, tilt: 0 }));
   const glowMat = (color: number) =>
     new THREE.MeshBasicMaterial({
       color,
@@ -195,8 +269,20 @@ export function createTrafficLightRig(
       toneMapped: false,
       side: THREE.DoubleSide,
     });
-  const frontGlow = make(buildGeo(glowShapes(sig.front), halfW, height, box.min.z - 0.05), glowMat(0xdfe8ff));
-  const rearGlow = make(buildGeo(glowShapes(sig.rear), halfW, height, box.max.z + 0.05), glowMat(0xff2010));
+  const glowGeo = (lamp: ReturnType<typeof lampGeometry>, shapes: Shape[], isRear: boolean) => {
+    if (lamp?.sides.length) {
+      const geos = lamp.sides.map(({ c, size }) => {
+        const w = Math.min(Math.max(size.x, 0.15) * 2.2 + 0.3, 1.4);
+        const h = Math.min(Math.max(size.y, 0.1) * 2.6 + 0.3, 0.9);
+        return new THREE.PlaneGeometry(w, h).translate(c.x, c.y, c.z + (isRear ? 0.06 : -0.06));
+      });
+      return mergeGeometries(geos) ?? geos[0]!;
+    }
+    const big = shapes.map((p) => ({ ...p, w: Math.max(p.w, 0.12) * 2.6 + 0.3, h: Math.max(p.h, 0.12) * 2.6 + 0.3, round: false, tilt: 0 }));
+    return snappedSignature(big, template, box, halfW, height, isRear);
+  };
+  const frontGlow = make(glowGeo(lampF, sig.front, false), glowMat(0xdfe8ff));
+  const rearGlow = make(glowGeo(lampR, sig.rear, true), glowMat(0xff2010));
 
   const ws = findWindscreen(template, box);
   const length = Math.min(0.62, ws.halfW * 0.6) * (tall ? 1.4 : 1);
@@ -212,7 +298,7 @@ export function createTrafficLightRig(
     new THREE.Vector3(ws.halfW * 0.02, ws.baseY, ws.baseZ),
   ];
   const all = [front, rear, frontGlow, rearGlow, wipers];
-  return { front, rear, frontGlow, rearGlow, wipers, wiper: { pivots, tilt: tall ? 0.15 : ws.tilt, length }, all };
+  return { front, rear, frontGlow, rearGlow, wipers, wiper: { pivots, tilt: ws.found ? ws.tilt : tall ? 0.15 : ws.tilt, length }, all };
 }
 
 const _local = new THREE.Matrix4();
