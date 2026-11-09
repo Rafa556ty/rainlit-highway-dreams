@@ -923,7 +923,6 @@ export class Scene3D {
       const box = new THREE.Box3().setFromObject(car);
       const ws = findWindscreen(car, box);
       const len = Math.min(0.62, ws.halfW * 0.6);
-      if (import.meta.env.DEV) console.log("wiper-player", JSON.stringify(ws), JSON.stringify(box));
       const geo = new THREE.BoxGeometry(len, 0.018, 0.025).translate(len / 2, 0.012, 0);
       const mat = new THREE.MeshStandardMaterial({ color: 0x0b0b0c, roughness: 0.5, metalness: 0.3 });
       for (const x of [-ws.halfW * 0.62, ws.halfW * 0.02]) {
@@ -932,7 +931,7 @@ export class Scene3D {
         mesh.rotation.order = "XYZ";
         mesh.position.set(x, ws.baseY, ws.baseZ);
         car.add(mesh);
-        this.playerWipers.push({ mesh, tilt: 1.05 });
+        this.playerWipers.push({ mesh, tilt: ws.tilt });
       }
     }
 

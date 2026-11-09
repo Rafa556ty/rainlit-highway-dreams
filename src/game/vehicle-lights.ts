@@ -137,7 +137,24 @@ export function findWindscreen(template: THREE.Object3D, box: THREE.Box3) {
   const valid = !glass.isEmpty() && glass.min.z > box.min.z && glass.min.z < 0.5;
   const baseZ = valid ? glass.min.z + 0.12 : box.min.z + size.z * 0.3;
   const baseY = valid ? Math.max(glass.min.y + 0.04, size.y * 0.55) : size.y * 0.66;
-  return { baseZ, baseY, halfW: size.x / 2 };
+  // Snap onto the actual glass/body surface so blades sit on top of the windscreen.
+  const ray = new THREE.Raycaster();
+  const down = new THREE.Vector3(0, -1, 0);
+  const surf = (x: number, z: number) => {
+    ray.set(new THREE.Vector3(x, box.max.y + 1, z), down);
+    const hit = ray.intersectObject(template, true)[0];
+    return hit ? hit.point.y : null;
+  };
+  const x = size.x * 0.12;
+  const y0 = surf(x, baseZ);
+  const y1 = surf(x, baseZ + 0.3);
+  let tilt = 1.05;
+  let y = baseY;
+  if (y0 !== null) {
+    y = y0 + 0.025;
+    if (y1 !== null && y1 > y0) tilt = Math.max(0.15, Math.min(1.35, Math.atan2(0.3, y1 - y0)));
+  }
+  return { baseZ, baseY: y, halfW: size.x / 2, tilt };
 }
 
 export function createTrafficLightRig(
@@ -181,7 +198,6 @@ export function createTrafficLightRig(
   const rearGlow = make(buildGeo(glowShapes(sig.rear), halfW, height, box.max.z + 0.05), glowMat(0xff2010));
 
   const ws = findWindscreen(template, box);
-  if (import.meta.env.DEV) console.log("wiper", key, JSON.stringify(ws), JSON.stringify(box));
   const length = Math.min(0.62, ws.halfW * 0.6) * (tall ? 1.4 : 1);
   // Blade lies along +x from its pivot; thin and dark.
   const bladeGeo = new THREE.BoxGeometry(length, 0.018, 0.025).translate(length / 2, 0.012, 0);
@@ -195,7 +211,7 @@ export function createTrafficLightRig(
     new THREE.Vector3(ws.halfW * 0.02, ws.baseY, ws.baseZ),
   ];
   const all = [front, rear, frontGlow, rearGlow, wipers];
-  return { front, rear, frontGlow, rearGlow, wipers, wiper: { pivots, tilt: tall ? 0.15 : 1.05, length }, all };
+  return { front, rear, frontGlow, rearGlow, wipers, wiper: { pivots, tilt: tall ? 0.15 : ws.tilt, length }, all };
 }
 
 const _local = new THREE.Matrix4();
