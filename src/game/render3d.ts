@@ -922,6 +922,7 @@ export class Scene3D {
     {
       const box = new THREE.Box3().setFromObject(car);
       const ws = findWindscreen(car, box);
+      console.log("WS", "player", JSON.stringify(ws), JSON.stringify(box.min.toArray()), JSON.stringify(box.max.toArray()));
       const len = Math.min(0.62, ws.halfW * 0.6);
       const geo = new THREE.BoxGeometry(len, 0.018, 0.025).translate(len / 2, 0.012, 0);
       const mat = new THREE.MeshStandardMaterial({ color: 0x0b0b0c, roughness: 0.5, metalness: 0.3 });
