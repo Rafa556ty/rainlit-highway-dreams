@@ -41,3 +41,4 @@ use the editor.
 - Selectable camera views are pure poses in `src/game/camera-views.ts` applied by render3d; scenery and traffic render far behind the car so the reverse camera never exposes unloaded world.
 - Bake road environment reflections once in `road-lighting.ts`; use shared contact textures and local light halos rather than full-screen phone post-processing to limit rendering cost.
 - PC vs phone layout is decided by pure `detectUi`/`resolveUi` in `src/game/device-ui.ts` with a saved manual override in settings; keeps the rule testable.
+- Traffic car light signatures and wipers live in src/game/vehicle-lights.ts as instanced overlays (one batch per model) — keeps draw calls flat.
