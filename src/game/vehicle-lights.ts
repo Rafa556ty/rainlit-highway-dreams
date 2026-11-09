@@ -160,6 +160,7 @@ export function findWindscreen(template: THREE.Object3D, box: THREE.Box3) {
         if (Math.abs(p.x) < halfBody * 0.4 && p.y < low) { low = p.y; lowZ = p.z; }
       }
     }
+    if (!Number.isFinite(low)) for (const t of tris) for (const p of [t.a, t.b, t.c]) if (p.y < low) { low = p.y; lowZ = p.z; }
     normal.normalize();
     // tilt: rotation about X that lays the vertical blade plane onto the glass.
     const tilt = Math.atan2(Math.max(normal.y, 0), -normal.z);
@@ -168,8 +169,30 @@ export function findWindscreen(template: THREE.Object3D, box: THREE.Box3) {
     const base = new THREE.Vector3(0, low, lowZ).addScaledVector(up, 0.035).addScaledVector(normal, 0.018);
     return { baseZ: base.z, baseY: base.y, halfW: Math.min(halfW, halfBody), tilt, found: true };
   }
+  // No named glass: walk the body profile from the nose and take the hood→screen kink.
+  const ray = new THREE.Raycaster();
+  const down = new THREE.Vector3(0, -1, 0);
+  const x = size.x * 0.12;
+  const surf = (z: number) => {
+    ray.set(new THREE.Vector3(x, box.max.y + 1, z), down);
+    const hit = ray.intersectObject(template, true)[0];
+    return hit ? hit.point.y : null;
+  };
+  for (let z = box.min.z + size.z * 0.12; z < midZ + size.z * 0.1; z += 0.04) {
+    const y0 = surf(z), y1 = surf(z + 0.12);
+    if (y0 === null || y1 === null) continue;
+    const slope = (y1 - y0) / 0.12;
+    if (slope > 0.7 && y0 > size.y * 0.45) {
+      const tilt = Math.atan2(1, slope);
+      const normal = new THREE.Vector3(0, Math.sin(tilt), -Math.cos(tilt));
+      const up = new THREE.Vector3(0, Math.cos(tilt), Math.sin(tilt));
+      const base = new THREE.Vector3(0, y0, z).addScaledVector(up, 0.06).addScaledVector(normal, 0.018);
+      return { baseZ: base.z, baseY: base.y, halfW: halfBody * 0.62, tilt, found: true };
+    }
+  }
   return { baseZ: box.min.z + size.z * 0.3, baseY: size.y * 0.66, halfW: halfBody, tilt: 1.05, found: false };
 }
+
 
 /** Lamp lens geometry of the model itself, split into front and rear clusters. */
 function lampGeometry(template: THREE.Object3D, box: THREE.Box3, rear: boolean) {
