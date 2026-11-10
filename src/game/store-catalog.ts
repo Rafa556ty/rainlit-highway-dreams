@@ -2,7 +2,7 @@ import svj from '@/assets/store/svj.jpg.asset.json';
 import urus from '@/assets/store/urus.jpg.asset.json';
 import murcielago from '@/assets/store/murcielago.jpg.asset.json';
 import veneno from '@/assets/store/veneno.jpg.asset.json';
-import chiron from '@/assets/store/chiron.jpg.asset.json';
+import chiron from '@/assets/store/chiron-road.jpg.asset.json';
 
 export const STORE_CARS = [
   { id: 'svj', name: 'Lamborghini SVJ', price: 13000, image: svj.url },

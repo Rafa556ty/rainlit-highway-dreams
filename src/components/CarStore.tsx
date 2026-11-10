@@ -16,7 +16,7 @@ export function CarStore({ onClose }: { onClose: () => void }) {
           <h3 className="mb-5 border-b border-primary pb-3 font-display text-2xl text-primary">Carros grátis</h3>
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {STORE_CARS.map(car => (
-              <Button key={car.id} variant="outline" className="block h-auto w-full overflow-hidden rounded border-hud-border bg-card p-0 text-left whitespace-normal hover:border-primary hover:bg-card" onClick={() => {
+              <Button key={car.id} variant="outline" className="block h-auto w-full overflow-hidden rounded border-hud-border bg-card p-0 text-left text-foreground whitespace-normal hover:border-primary hover:bg-card hover:text-foreground" onClick={() => {
                 if (selectStoreCar(car.id).status === 'demo') setSelected(car.name);
               }} aria-label={`${car.name}, ${car.price.toLocaleString('pt-BR')} moedas`}>
                 <img src={car.image} alt={car.name} className="aspect-video w-full object-cover" />
