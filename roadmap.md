@@ -29,7 +29,7 @@
 
 # Sons de tráfego + loja DEMO
 
-- [ ] Integrar os três sons enviados: Ferrari, Bugatti e Mustang, com cruzeiro mais suave e aceleração mais forte.
-- [ ] Verificar reprodução, distância e silêncio ao pausar.
+- [x] Integrar os três sons enviados: Ferrari, Bugatti e Mustang, com cruzeiro mais suave e aceleração mais forte.
+- [x] Verificar reprodução, distância e silêncio ao pausar.
 - [ ] Depois dos sons, criar loja com fotos, seção Carros grátis, preços e aviso DEMO ao selecionar.
 - [ ] Testar loja no PC e celular.
