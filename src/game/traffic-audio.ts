@@ -44,7 +44,9 @@ export class TrafficAudio {
     const keep = new Set(nearby);
     for (const [car, voice] of this.voices) if (!keep.has(car)) { this.stopVoice(voice); this.voices.delete(car); }
     for (const car of nearby) {
-      const buffer = this.buffers.get(TRAFFIC_SOUNDS[car.type]);
+      const url = TRAFFIC_SOUNDS[car.type];
+      if (!url) continue;
+      const buffer = this.buffers.get(url);
       if (!buffer) continue;
       const level = trafficSoundLevel(car, playerZ, playerX, ppm, running);
       let voice = this.voices.get(car);
@@ -74,7 +76,7 @@ export class TrafficAudio {
     let best = 0, score = accelerating ? -Infinity : Infinity;
     for (let t = 0; t + span <= buffer.duration; t += 0.2) {
       let energy = 0;
-      for (let i = Math.floor(t*buffer.sampleRate); i < (t+span)*buffer.sampleRate; i += 64) energy += samples[i] ** 2;
+      for (let i = Math.floor(t*buffer.sampleRate); i < (t+span)*buffer.sampleRate; i += 64) energy += (samples[i] ?? 0) ** 2;
       if (energy < 0.05) continue;
       if (accelerating ? energy > score : energy < score) { best = t; score = energy; }
     }
