@@ -43,3 +43,4 @@ use the editor.
 - PC vs phone layout is decided by pure `detectUi`/`resolveUi` in `src/game/device-ui.ts` with a saved manual override in settings; keeps the rule testable.
 - Traffic car light signatures and wipers live in src/game/vehicle-lights.ts as instanced overlays (one batch per model) — keeps draw calls flat.
 - New owner-supplied media uses CDN asset pointers; traffic-audio.ts owns distance-limited Web Audio voices driven by engine telemetry to keep per-frame audio outside React.
+- CarStore is an in-game DEMO overlay backed by a pure catalog; selections show the availability notice and never charge coins or unlock vehicles.
