@@ -519,6 +519,7 @@ export class RacingEngine {
 
   stop() {
     cancelAnimationFrame(this.raf);
+    this.audio?.setTraffic([], this.pz, this.player.x, this.k, false);
     this.audio?.setEngine(0, false, false);
     this.audio?.stopHorn();
     this.audio?.setPolice(999, false);
@@ -528,6 +529,7 @@ export class RacingEngine {
   // ---------- simulation ----------
   private update(dt: number) {
     if (this.paused) {
+      this.audio?.setTraffic([], this.pz, this.player.x, this.k, false);
       this.audio?.setEngine(0, false, false);
       this.audio?.setPolice(999, false);
       this.audio?.setTireScreech(0);
@@ -858,6 +860,7 @@ export class RacingEngine {
     this.shake *= Math.exp(-6 * dt);
     this.flash *= Math.exp(-5 * dt);
 
+    this.audio?.setTraffic(this.traffic, this.pz, p.x, this.k, playing);
     this.audio?.setEngine(
       playing ? p.speed : 0,
       (inp.gas || this.boostActive) && playing,
