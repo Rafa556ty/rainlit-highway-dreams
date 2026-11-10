@@ -44,6 +44,7 @@ import bullEmblem from "@/assets/bull-emblem.png";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { GarageViewer } from "@/components/GarageViewer";
+import { CarStore } from '@/components/CarStore';
 import { GameAudio } from "@/game/audio";
 import {
   MAX_SPEED,
@@ -1182,23 +1183,7 @@ export function RacingGame() {
           </div>
         )}
         {showPoliceOff && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-scrim px-6">
-            <div className="corner-cut w-full max-w-xs border border-hud-border bg-card p-5 text-center">
-              <ShoppingBag className="mx-auto mb-2 size-10 text-primary" />
-              <h2 className="font-display text-3xl text-foreground">Loja</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                O jogo está na versão DEMO. A loja ainda vai ser implementada nas atualizações
-                futuras.
-              </p>
-              <Button
-                variant="race"
-                className="mt-4 w-full font-display tracking-widest"
-                onClick={() => setShowPoliceOff(false)}
-              >
-                VOLTAR
-              </Button>
-            </div>
-          </div>
+          <CarStore onClose={() => setShowPoliceOff(false)} />
         )}
       </div>
     </main>

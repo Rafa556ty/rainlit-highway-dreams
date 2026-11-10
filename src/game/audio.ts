@@ -11,6 +11,7 @@
 import { GEAR_TOP, GEARS, IDLE_RPM, REDLINE, pickGear } from "./gearbox";
 import idleWav from "@/assets/sounds/revuelto-idle.wav.asset.json";
 import revWav from "@/assets/sounds/revuelto-rev.wav.asset.json";
+import { TrafficAudio, type SoundCar } from './traffic-audio';
 
 const MASTER = 0.82;
 
@@ -33,6 +34,10 @@ export const GEAR_OFFSETS: [number, number][] = [
 ];
 
 export class GameAudio {
+  private trafficAudio: TrafficAudio | null = null;
+  setTraffic(cars: readonly SoundCar[], z: number, x: number, ppm: number, running: boolean) {
+    this.trafficAudio?.update(cars, z, x, ppm, running);
+  }
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
 
@@ -138,6 +143,7 @@ export class GameAudio {
       this.tunnelLP.connect(this.tunnelBoom);
       this.tunnelBoom.connect(comp);
       this.master.connect(this.tunnelLP);
+      this.trafficAudio = new TrafficAudio(ctx, this.master);
       this.tunnelSend = ctx.createGain();
       this.tunnelSend.gain.value = 0;
       this.master.connect(this.tunnelSend);
@@ -372,6 +378,8 @@ export class GameAudio {
   }
 
   dispose() {
+    this.trafficAudio?.dispose();
+    this.trafficAudio = null;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.stopHorn();

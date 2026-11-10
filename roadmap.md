@@ -25,4 +25,11 @@
 
 - [x] Add the uploaded Ferrari SF90 Stradale as realistic traffic, more frequent than the Bugatti.
 - [x] Same calm/push sports-car rhythm with overtakes.
-- [ ] Real SF90 acceleration sound — paused by the user ("esquece som por enquanto").
+- [x] Real SF90 acceleration sound — resumed with owner-supplied audio.
+
+# Sons de tráfego + loja DEMO
+
+- [x] Integrar os três sons enviados: Ferrari, Bugatti e Mustang, com cruzeiro mais suave e aceleração mais forte.
+- [x] Verificar reprodução, distância e silêncio ao pausar.
+- [x] Depois dos sons, criar loja com fotos, seção Carros grátis, preços e aviso DEMO ao selecionar.
+- [x] Testar loja no PC e celular.
