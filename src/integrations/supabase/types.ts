@@ -14,7 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      guest_garages: {
+        Row: {
+          chiron_owned: boolean
+          selected_car: string
+          token_hash: string
+          updated_at: string
+        }
+        Insert: {
+          chiron_owned?: boolean
+          selected_car?: string
+          token_hash: string
+          updated_at?: string
+        }
+        Update: {
+          chiron_owned?: boolean
+          selected_car?: string
+          token_hash?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

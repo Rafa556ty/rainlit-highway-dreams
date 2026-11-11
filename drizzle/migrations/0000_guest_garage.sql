@@ -1,0 +1,3 @@
+CREATE TABLE public.guest_garages (token_hash text PRIMARY KEY, chiron_owned boolean NOT NULL DEFAULT false, selected_car text NOT NULL DEFAULT 'revuelto' CHECK (selected_car IN ('revuelto','chiron')), updated_at timestamptz NOT NULL DEFAULT now(), CHECK (selected_car <> 'chiron' OR chiron_owned));
+GRANT ALL ON public.guest_garages TO service_role;
+ALTER TABLE public.guest_garages ENABLE ROW LEVEL SECURITY;
