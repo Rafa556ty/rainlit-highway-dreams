@@ -260,6 +260,38 @@ type Flame = {
 };
 
 export class Scene3D {
+  private playerKey: "revuelto" | "chiron" = "revuelto";
+  private playerLoad = 0;
+  private chironRig: ReturnType<typeof createTrafficLightRig> | null = null;
+  private playerLocal = new THREE.Matrix4();
+
+  async selectPlayerCar(key: "revuelto" | "chiron") {
+    const request = ++this.playerLoad;
+    const template = await loadCar(key);
+    if (this.disposed || request !== this.playerLoad) return;
+    this.player?.removeFromParent();
+    this.playerShadow?.removeFromParent(); this.sunShadow?.removeFromParent();
+    this.playerTail = []; this.playerHead = []; this.playerBrakeOnly = [];
+    this.playerWipers = []; this.playerWheels = []; this.lightHalos = []; this.flames = [];
+    this.engineBrakeLight = null; this.wing = undefined; this.chironRig = null;
+    this.playerKey = key;
+    this.setupPlayer(template.clone(true));
+    this.canvas.dataset.playerCar = key;
+  }
+
+  private setupChiron(car: THREE.Group) {
+    const rig = createTrafficLightRig("bugatti", car, 1, false);
+    this.chironRig = rig;
+    for (const part of rig.all) { part.count = part === rig.wipers ? 2 : 1; car.add(part); }
+    car.traverse(o => { if (o instanceof THREE.Mesh && o.userData["wheel"]) this.playerWheels.push({ mesh: o, radius: o.userData["radius"] || .34 }); });
+    this.headL.position.set(-.8,.7,-1.95); this.headR.position.set(.8,.7,-1.95);
+    this.headL.target.position.set(-.9,0,-30); this.headR.target.position.set(.9,0,-30);
+    if (!this.low) car.add(this.headL,this.headR,this.headL.target,this.headR.target);
+    this.playerShadow = this.addContactShadow(this.scene,2.3,4.6);
+    this.sunShadow = this.addContactShadow(this.scene,2.9,5.5); this.sunShadow.position.y=.016;
+    this.player = car; this.scene.add(car);
+    this.canvas.dataset.playerCar = "chiron";
+  }
   private low = phoneProfile({
     userAgent: navigator.userAgent,
     memory: (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
@@ -816,11 +848,7 @@ export class Scene3D {
 
   // ---------- models ----------
   private async loadModels() {
-    const player = await loadCar("revuelto").catch((e) => {
-      console.error("Revuelto model failed", e);
-      return null;
-    });
-    if (player) this.setupPlayer(player.clone(true));
+    await this.selectPlayerCar(this.playerKey).catch(e => console.error("Player model failed", e));
     const keys: ModelKey[] = [
       "hatch",
       "sedan",
@@ -850,6 +878,7 @@ export class Scene3D {
   }
 
   private setupPlayer(car: THREE.Group) {
+    if (this.playerKey === "chiron") { this.setupChiron(car); return; }
     const exhausts: THREE.Vector3[] = [];
     const box = new THREE.Box3();
     car.updateMatrixWorld(true);
@@ -922,7 +951,6 @@ export class Scene3D {
     {
       const box = new THREE.Box3().setFromObject(car);
       const ws = findWindscreen(car, box);
-      console.log("WS", "player", JSON.stringify(ws), JSON.stringify(box.min.toArray()), JSON.stringify(box.max.toArray()));
       const len = Math.min(0.62, ws.halfW * 0.6);
       const geo = new THREE.BoxGeometry(len, 0.018, 0.025).translate(len / 2, 0.012, 0);
       const mat = new THREE.MeshStandardMaterial({ color: 0x0b0b0c, roughness: 0.5, metalness: 0.3 });
@@ -1412,7 +1440,18 @@ export class Scene3D {
         w.mesh.visible = true;
       }
       if (import.meta.env.DEV) this.canvas.dataset["wipers"] = pa.toFixed(2);
-      this.updateFlames(s, dt);
+      if (this.chironRig) {
+        const rig = this.chironRig;
+        this.playerLocal.identity();
+        for (const part of [rig.front, rig.rear, rig.frontGlow, rig.rearGlow]) { part.setMatrixAt(0,this.playerLocal); part.instanceMatrix.needsUpdate = true; }
+        rig.front.material.opacity = lights ? 1 : .18;
+        rig.rear.material.opacity = isBraking ? 1 : lights ? .8 : 0;
+        rig.frontGlow.material.opacity = lights ? .35 : 0;
+        rig.rearGlow.material.opacity = isBraking ? .5 : lights ? .25 : 0;
+        rig.wiper.pivots.forEach((pv,i) => rig.wipers.setMatrixAt(i,wiperMatrix(this.playerLocal,pv,rig.wiper.tilt,pa,this.wiperTmp)));
+        rig.wipers.instanceMatrix.needsUpdate = true;
+      }
+      if (this.playerKey === "revuelto") this.updateFlames(s, dt);
     }
 
     // Shared material batches: every visible vehicle still draws, with one
