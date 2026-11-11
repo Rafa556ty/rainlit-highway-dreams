@@ -13,10 +13,12 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 // Same detailed model the garage shows, so the race car looks identical.
 import revueltoAsset from "@/assets/models/revuelto.glb.asset.json";
 import mustangAsset from "@/assets/models/mustang-gt-traffic.glb.asset.json";
+import chironPlayableAsset from "@/assets/models/chiron-playable.glb.asset.json";
 import bmwAsset from "@/assets/models/bmw-m4-traffic.glb.asset.json";
 
 export type TrafficModelKey = "hatch" | "sedan" | "suv" | "pickup" | "bus" | "truck";
 export type ModelKey =
+  | "chiron"
   | "revuelto"
   | "mustang"
   | "bmw"
@@ -34,6 +36,7 @@ type ModelSpec = {
 // Realistic CC0 traffic (tevy.dev), textures stripped + meshopt for phones.
 // Their noses point +Z, so they are turned around explicitly.
 export const MODEL_SPECS: Record<ModelKey, ModelSpec> = {
+  chiron: { url: chironPlayableAsset.url, length: 4.54, yaw: Math.PI },
   revuelto: { url: revueltoAsset.url, length: 4.95, yaw: 0 },
   mustang: { url: mustangAsset.url, length: 4.8, yaw: 0 },
   bmw: { url: bmwAsset.url, length: 4.8, yaw: 0 },
@@ -592,8 +595,8 @@ export function loadCar(key: ModelKey): Promise<THREE.Group> {
         // spin; the caliper is bolted to the upright and does not turn.
         const result = batchCar(
           normalizeCar(scene, spec),
-          key === "revuelto"
-            ? (o) => o.name.startsWith("Wheel_") && !o.name.includes("Caliper")
+          key === "revuelto" || key === "chiron"
+            ? (o) => key === "chiron" ? /tyre|rim/i.test((o.material as THREE.Material).name) : o.name.startsWith("Wheel_") && !o.name.includes("Caliper")
             : undefined,
         );
         if (key === "revuelto") isolateActiveWing(result);

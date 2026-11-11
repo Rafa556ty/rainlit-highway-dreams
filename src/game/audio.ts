@@ -13,6 +13,8 @@ import idleWav from "@/assets/sounds/revuelto-idle.wav.asset.json";
 import revWav from "@/assets/sounds/revuelto-rev.wav.asset.json";
 import { TrafficAudio, type SoundCar } from './traffic-audio';
 
+import chironSound from "@/assets/sounds/bugatti-engine.mp3.asset.json";
+
 const MASTER = 0.82;
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -34,6 +36,29 @@ export const GEAR_OFFSETS: [number, number][] = [
 ];
 
 export class GameAudio {
+  private playerCar: "revuelto" | "chiron" = "revuelto";
+  private chironBuffer: AudioBuffer | null = null;
+  private chironSource: AudioBufferSourceNode | null = null;
+  private chironGain: GainNode | null = null;
+  setPlayerCar(car: "revuelto" | "chiron") {
+    this.playerCar = car;
+    if (car === "revuelto" && this.ctx) this.chironGain?.gain.setTargetAtTime(0,this.ctx.currentTime,.1);
+    if (car === "chiron" && this.ctx && !this.chironBuffer) void this.loadChiron(this.ctx);
+  }
+  private async loadChiron(ctx: AudioContext) {
+    try {
+      const res = await fetch(chironSound.url);
+      if (!res.ok) return;
+      const buffer = await ctx.decodeAudioData(await res.arrayBuffer());
+      if (this.ctx !== ctx || !this.master || this.chironSource) return;
+      this.chironBuffer = buffer;
+      const source = ctx.createBufferSource(); source.buffer=buffer; source.loop=true;
+      source.loopStart=.1; source.loopEnd=Math.max(.2,buffer.duration-.1);
+      const gain=ctx.createGain(); gain.gain.value=0;
+      source.connect(gain); gain.connect(this.master); source.start();
+      this.chironSource=source; this.chironGain=gain;
+    } catch { /* Retry on next car selection; never substitute Revuelto's sample. */ }
+  }
   private trafficAudio: TrafficAudio | null = null;
   setTraffic(cars: readonly SoundCar[], z: number, x: number, ppm: number, running: boolean) {
     this.trafficAudio?.update(cars, z, x, ppm, running);
@@ -267,6 +292,7 @@ export class GameAudio {
 
   // ---------- Authentic V12 samples loading ----------
   private async loadSamples(ctx: AudioContext) {
+    void this.loadChiron(ctx);
     const get = async (urls: string[]) => {
       for (const url of urls) {
         try {
@@ -392,6 +418,8 @@ export class GameAudio {
     } catch {
       // ignore
     }
+    this.chironSource?.stop(); this.chironSource?.disconnect(); this.chironGain?.disconnect();
+    this.chironSource = null; this.chironGain = null; this.chironBuffer = null;
     void this.ctx?.close();
     this.ctx = null;
   }
@@ -404,7 +432,7 @@ export class GameAudio {
 
   /** One-shot real rev blip (played when the race starts). */
   rev() {
-    if (!this.ctx || !this.master) return;
+    if (!this.ctx || !this.master || this.playerCar === "chiron") return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
     if (this.forzaBuf) {
@@ -664,6 +692,15 @@ export class GameAudio {
     this.lastT = t;
     this.inTunnel = inTunnel;
 
+    if (this.playerCar === "chiron") {
+      this.idleGain.gain.setTargetAtTime(0,t,.05); this.forzaGain.gain.setTargetAtTime(0,t,.05); this.topGearGain.gain.setTargetAtTime(0,t,.05); this.loadBus.gain.setTargetAtTime(0,t,.05);
+      this.stopForzaGear();
+      this.chironGain?.gain.setTargetAtTime(running ? throttle ? .65 : .12 : 0,t,.12);
+      this.chironSource?.playbackRate.setTargetAtTime(.65+Math.min(speed/340,1)*.65,t,.15);
+      this.windGain.gain.setTargetAtTime(running ? .18*(speed/340)**2 : 0,t,.2);
+      return;
+    }
+    this.chironGain?.gain.setTargetAtTime(0,t,.1);
     const rainHiss = rain > 0 ? rain * 0.22 : 0;
     const windTarget = running ? (inTunnel ? 0.12 : 0.22 + rainHiss) * (speed / 340) ** 2 : 0;
     this.windGain.gain.setTargetAtTime(windTarget, t, 0.2);

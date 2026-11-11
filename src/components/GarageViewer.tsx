@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type * as THREE from "three";
 import { X } from "lucide-react";
-import carModelAsset from "@/assets/models/revuelto.glb.asset.json";
+import revueltoPhoto from "@/assets/revuelto.png";
+import chironPhoto from "@/assets/store/chiron-road.jpg.asset.json";
+import type { PlayerCar } from "@/game/player-cars";
 import { Button } from "@/components/ui/button";
 
 export type GarageLabels = {
@@ -12,64 +14,14 @@ export type GarageLabels = {
   close: string;
 };
 
-/**
- * The GLB is ~5.7 MB, so it is fetched once and kept in module scope: opening
- * the garage a second time paints the car instantly instead of re-downloading.
- */
-let cachedGlb: ArrayBuffer | null = null;
-
-async function fetchModel(onProgress: (ratio: number) => void): Promise<ArrayBuffer> {
-  if (cachedGlb) return cachedGlb;
-
-  const res = await fetch(carModelAsset.url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-  const total = Number(res.headers.get("content-length")) || 0;
-  const reader = res.body?.getReader();
-
-  let buffer: ArrayBuffer;
-  if (!reader) {
-    buffer = await res.arrayBuffer();
-  } else {
-    const chunks: Uint8Array[] = [];
-    let received = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value) continue;
-      chunks.push(value);
-      received += value.length;
-      if (total > 0) onProgress(Math.min(1, received / total));
-    }
-    const merged = new Uint8Array(received);
-    let offset = 0;
-    for (const chunk of chunks) {
-      merged.set(chunk, offset);
-      offset += chunk.length;
-    }
-    buffer = merged.buffer;
-  }
-
-  onProgress(1);
-  cachedGlb = buffer;
-  return buffer;
-}
-
-/**
- * Turntable garage view of the real 3D Revuelto model.
- *
- * three.js and the loaders are imported lazily inside the effect: the racing
- * engine is a plain 2D canvas, so the ~600 KB 3D stack only ever downloads
- * when somebody actually opens the garage, and nothing browser-only is
- * evaluated during SSR.
- */
-export function GarageViewer({ labels, onClose }: { labels: GarageLabels; onClose: () => void }) {
+export function GarageViewer({ labels, onClose, selectedCar, chironOwned, onSelect, busy }: { labels: GarageLabels; onClose: () => void; selectedCar: PlayerCar; chironOwned: boolean; onSelect: (car: PlayerCar) => void; busy: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
+    setStatus("loading"); setProgress(0);
     let disposed = false;
     let raf = 0;
     let teardown: (() => void) | null = null;
@@ -78,7 +30,6 @@ export function GarageViewer({ labels, onClose }: { labels: GarageLabels; onClos
 
     (async () => {
       const THREE = await import("three");
-      const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
       const { OrbitControls } = await import("three/addons/controls/OrbitControls.js");
       const { RoomEnvironment } = await import("three/addons/environments/RoomEnvironment.js");
       if (disposed) return;
@@ -104,8 +55,8 @@ export function GarageViewer({ labels, onClose }: { labels: GarageLabels; onClos
       container.appendChild(canvas);
 
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x08080b);
-      scene.fog = new THREE.Fog(0x08080b, 14, 34);
+      scene.background = new THREE.Color(0x303a40);
+      scene.fog = new THREE.Fog(0x303a40, 20, 45);
 
       const camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 120);
 
@@ -134,23 +85,13 @@ export function GarageViewer({ labels, onClose }: { labels: GarageLabels; onClos
 
       scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x1a1208, 0.55));
 
-      const loader = new GLTFLoader();
-      const { MeshoptDecoder } = await import("three/addons/libs/meshopt_decoder.module.js");
-      loader.setMeshoptDecoder(MeshoptDecoder);
-      const { paintRevuelto } = await import("@/game/models3d");
-      const buffer = await fetchModel(setProgress);
+      const { loadCar } = await import("@/game/models3d");
+      const template = await loadCar(selectedCar);
       if (disposed) return;
-
-      const gltf = await new Promise<{ scene: THREE.Group }>((resolve, reject) => {
-        loader.parse(buffer, "", resolve, reject);
-      });
-      if (disposed) return;
-
-      const car = gltf.scene;
-      paintRevuelto(car);
-      // glTF is always Y up and this file's root node already carries the
-      // exporter's axis conversion, so the model needs no re-orientation here.
-
+      const car = template.clone(true);
+      // Cached model geometry/materials belong to the shared loader, not this view.
+      car.traverse(o => { if (o instanceof THREE.Mesh) { o.geometry = o.geometry.clone(); o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone(); } });
+      setProgress(1);
       const pivot = new THREE.Group();
       pivot.add(car);
       scene.add(pivot);
@@ -162,37 +103,7 @@ export function GarageViewer({ labels, onClose }: { labels: GarageLabels; onClos
         mesh.receiveShadow = true;
       });
 
-      // Point the car's nose at +X by reading where the head and tail lamps sit,
-      // so a swapped-in model still lands in a flattering three-quarter angle.
-      const head = new THREE.Vector3();
-      const tail = new THREE.Vector3();
-      let headWeight = 0;
-      let tailWeight = 0;
-      pivot.updateMatrixWorld(true);
-      const lampBox = new THREE.Box3();
-      car.traverse((obj) => {
-        const mesh = obj as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        const label =
-          `${(mesh.material as { name?: string })?.name ?? ""} ${mesh.name}`.toLowerCase();
-        const weight = mesh.geometry?.attributes?.["position"]?.count ?? 1;
-        const center = lampBox.setFromObject(mesh).getCenter(new THREE.Vector3());
-        if (label.includes("tail")) {
-          tail.addScaledVector(center, weight);
-          tailWeight += weight;
-        } else if (label.includes("headlight") || label.includes("daylight")) {
-          head.addScaledVector(center, weight);
-          headWeight += weight;
-        }
-      });
-      if (headWeight > 0 && tailWeight > 0) {
-        head.divideScalar(headWeight);
-        tail.divideScalar(tailWeight);
-        const front = head.sub(tail);
-        if (Math.hypot(front.x, front.z) > 0.05) {
-          pivot.rotation.y = Math.atan2(front.z, front.x);
-        }
-      }
+      pivot.rotation.y = -Math.PI / 2;
 
       // Rest the car on the floor and spin it around its own centre.
       pivot.updateMatrixWorld(true);
@@ -205,19 +116,8 @@ export function GarageViewer({ labels, onClose }: { labels: GarageLabels; onClos
       const carLength = Math.max(size.x, size.z);
       const carHeight = Math.max(0.4, size.y);
 
-      const ground = new THREE.Mesh(
-        new THREE.CircleGeometry(carLength * 2.2, 72),
-        new THREE.MeshStandardMaterial({
-          color: 0x0d0d12,
-          roughness: 0.68,
-          metalness: 0.22,
-        }),
-      );
-      ground.rotation.x = -Math.PI / 2;
-      ground.position.y = 0;
-      ground.receiveShadow = true;
-      scene.add(ground);
-
+      const { addGarageEnvironment } = await import("@/game/garage-environment");
+      addGarageEnvironment(scene);
       keyLight.position.set(carLength * 0.9, carHeight * 6, carLength * 1.1);
       keyLight.target.position.set(0, carHeight * 0.4, 0);
       const shadowSpan = carLength * 0.9;
@@ -302,6 +202,8 @@ export function GarageViewer({ labels, onClose }: { labels: GarageLabels; onClos
       };
       frame();
 
+      container.dataset.sceneReady = "true";
+      container.dataset.car = selectedCar;
       setStatus("ready");
 
       teardown = () => {
@@ -319,7 +221,7 @@ export function GarageViewer({ labels, onClose }: { labels: GarageLabels; onClos
           for (const material of materials) {
             if (!material) continue;
             for (const value of Object.values(material as unknown as Record<string, unknown>)) {
-              if ((value as THREE.Texture | null)?.isTexture) (value as THREE.Texture).dispose();
+              // Textures remain owned by the shared model cache.
             }
             material.dispose();
           }
@@ -341,7 +243,7 @@ export function GarageViewer({ labels, onClose }: { labels: GarageLabels; onClos
       disposed = true;
       if (teardown) teardown();
     };
-  }, []);
+  }, [selectedCar]);
 
   return (
     <div className="absolute inset-0 z-40 flex flex-col bg-background">
@@ -351,17 +253,17 @@ export function GarageViewer({ labels, onClose }: { labels: GarageLabels; onClos
             {labels.title}
           </h2>
           <p className="mt-1 font-display text-[11px] tracking-[0.3em] text-muted-foreground">
-            LAMBORGHINI REVUELTO
+            {selectedCar === "chiron" ? "BUGATTI CHIRON" : "LAMBORGHINI REVUELTO"}
           </p>
         </div>
-        <button
-          type="button"
+        <Button
+          variant="ghost" size="icon"
           onClick={onClose}
           aria-label={labels.close}
           className="corner-cut border border-hud-border bg-hud p-2 text-foreground transition-colors hover:bg-secondary"
         >
           <X className="size-5" />
-        </button>
+        </Button>
       </div>
 
       <div ref={containerRef} className="relative min-h-0 flex-1 touch-none">
@@ -395,9 +297,15 @@ export function GarageViewer({ labels, onClose }: { labels: GarageLabels; onClos
         )}
       </div>
 
-      <p className="bg-scrim-bottom px-5 pb-[max(env(safe-area-inset-bottom),14px)] pt-2 text-center text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-        {labels.hint}
-      </p>
+      <div className="flex shrink-0 justify-center gap-3 border-t border-hud-border bg-hud px-3 py-3">
+        {([{ id: 'revuelto' as const, name: 'Lamborghini Revuelto', image: revueltoPhoto }, { id: 'chiron' as const, name: 'Bugatti Chiron', image: chironPhoto.url }]).map(c => (
+          <Button key={c.id} variant="outline" disabled={busy} aria-pressed={selectedCar === c.id} aria-label={`Selecionar ${c.name}`} onClick={() => onSelect(c.id)} className={`h-auto w-40 max-w-[44%] flex-col gap-1 overflow-hidden p-0 pb-2 ${selectedCar === c.id ? 'border-primary bg-primary/10' : 'border-hud-border bg-card'}`}>
+            <img src={c.image} alt={c.name} className="h-16 w-full object-cover" />
+            <span className="text-xs">{c.name}</span>
+            <span className="text-[10px] text-primary">{c.id === selectedCar ? 'SELECIONADO' : c.id === 'chiron' && !chironOwned ? 'RESGATAR GRÁTIS' : 'DISPONÍVEL'}</span>
+          </Button>
+        ))}
+      </div>
     </div>
   );
 }

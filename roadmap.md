@@ -1,5 +1,12 @@
 # Repository import
 
+# Chiron jogável e garagem
+
+- [ ] Resgate confirmado uma única vez, sem cobrança, com seleção salva.
+- [ ] Modelo enviado em alta definição na garagem e durante a corrida.
+- [ ] Garagem 3D com pneus e fotos para alternar entre Chiron e Revuelto.
+- [ ] Testar resgate, persistência, troca e corrida no PC e celular.
+
 - [x] Inspect repository and confirm permission to import.
 - [x] Import racing game source and media without repository metadata or platform configuration.
 - [x] Run the imported game tests.
